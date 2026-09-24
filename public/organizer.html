@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Organizer — Don't Press It!</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+  <!-- Login screen -->
+  <div class="wrap" id="loginScreen">
+    <div class="brand">
+      <h1><span class="bolt">🖥️</span> Host Console</h1>
+      <p>Create a room and get a code for your players.</p>
+    </div>
+    <div class="card">
+      <label for="orgName">Your name</label>
+      <input type="text" id="orgName" placeholder="e.g. Game Master" maxlength="24">
+      <button class="btn btn-primary" id="createBtn">Create room</button>
+      <div class="error" id="loginError"></div>
+    </div>
+  </div>
+
+  <!-- Console screen -->
+  <div class="org-layout" id="console" style="display:none">
+    <div class="topbar">
+      <div class="code-box">
+        <span style="color:var(--text-dim); font-size:13px;">ROOM CODE</span>
+        <span class="roomcode" id="roomCodeText">----</span>
+      </div>
+      <div class="round-tag" id="roundTag">Lobby</div>
+    </div>
+
+    <div class="grid2">
+      <div style="display:flex; flex-direction:column; gap:16px;">
+        <div class="stage" id="stage">
+          <div class="signal wait" id="signalText">WAITING FOR PLAYERS</div>
+          <div class="meta" id="stageMeta">Share the room code and press Start when everyone's in.</div>
+        </div>
+
+        <div class="panel">
+          <div class="controls-row">
+            <button class="btn btn-primary" id="startBtn">Start round</button>
+            <button class="btn btn-ghost" id="resetBtn">Reset game</button>
+          </div>
+        </div>
+
+        <div class="panel" id="resultPanel" style="display:none">
+          <h3>Last round</h3>
+          <div class="result-list" id="resultList"></div>
+        </div>
+      </div>
+
+      <div style="display:flex; flex-direction:column; gap:16px;">
+        <div class="panel">
+          <h3>Players (<span id="playerCount">0</span>)</h3>
+          <div id="playerList"></div>
+        </div>
+
+        <div class="panel" id="settingsPanel">
+          <h3>Game settings</h3>
+          <div class="settings-grid">
+            <div>
+              <label for="s_rounds">Rounds</label>
+              <input type="number" id="s_rounds" min="1" max="50">
+            </div>
+            <div>
+              <label for="s_dontPress">Don't-press odds (%)</label>
+              <input type="number" id="s_dontPress" min="0" max="90">
+            </div>
+            <div>
+              <label for="s_minWait">Min wait (sec)</label>
+              <input type="number" id="s_minWait" min="0.5" max="20" step="0.5">
+            </div>
+            <div>
+              <label for="s_maxWait">Max wait (sec)</label>
+              <input type="number" id="s_maxWait" min="0.5" max="30" step="0.5">
+            </div>
+            <div>
+              <label for="s_window">Press window (sec)</label>
+              <input type="number" id="s_window" min="0.5" max="10" step="0.5">
+            </div>
+            <div></div>
+            <div>
+              <label for="s_p1">1st place pts</label>
+              <input type="number" id="s_p1" min="0" max="100">
+            </div>
+            <div>
+              <label for="s_p2">2nd place pts</label>
+              <input type="number" id="s_p2" min="0" max="100">
+            </div>
+            <div>
+              <label for="s_p3">3rd place pts</label>
+              <input type="number" id="s_p3" min="0" max="100">
+            </div>
+          </div>
+          <button class="btn btn-ghost" id="saveSettingsBtn">Save settings</button>
+          <div class="error" id="settingsError"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/organizer.js"></script>
+</body>
+</html>

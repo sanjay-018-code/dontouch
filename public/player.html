@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Player — Don't Press It!</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+  <!-- Join screen -->
+  <div class="wrap" id="joinScreen">
+    <div class="brand">
+      <h1><span class="bolt">📱</span> Join Game</h1>
+      <p>Enter the room code from the host's screen.</p>
+    </div>
+    <div class="card">
+      <label for="roomCodeInput">Room code</label>
+      <input type="text" id="roomCodeInput" placeholder="ABCD" maxlength="4" style="text-transform:uppercase; letter-spacing:0.15em; font-family:'Space Grotesk',sans-serif; font-weight:700;">
+      <label for="nameInput">Your name</label>
+      <input type="text" id="nameInput" placeholder="e.g. Sanjay" maxlength="20">
+      <button class="btn btn-primary" id="joinBtn">Join</button>
+      <div class="error" id="joinError"></div>
+    </div>
+  </div>
+
+  <!-- Game screen -->
+  <div class="player-screen" id="gameScreen" style="display:none">
+    <div class="player-header">
+      <span class="badge" id="roomBadge">Room ----</span>
+      <span class="score" id="scoreText">0 pts</span>
+    </div>
+
+    <div id="eliminatedBanner" class="eliminated-banner" style="display:none">💀 You're eliminated — watch the rest of the game!</div>
+
+    <div style="display:flex; flex-direction:column; align-items:center; gap:10px;">
+      <div class="status-text wait" id="statusText">Waiting for the host to start...</div>
+      <div class="badge" id="roundBadge" style="display:none"></div>
+    </div>
+
+    <button class="press-btn" id="pressBtn" disabled>PRESS</button>
+
+    <div class="footer-note">Tap fast on green. Never on red.</div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/player.js"></script>
+</body>
+</html>
