@@ -20,6 +20,16 @@ const playerList = document.getElementById('playerList');
 const settingsError = document.getElementById('settingsError');
 const settingsHint = document.getElementById('settingsHint');
 const saveSettingsBtn = document.getElementById('saveSettingsBtn');
+const signalPicker = document.getElementById('signalPicker');
+const pickHint = document.getElementById('pickHint');
+const settingsPanel = document.getElementById('settingsPanel');
+
+// The organizer's pick for the NEXT round: 'PRESS_NOW' | 'DONT_PRESS' | 'RANDOM'.
+// It is chosen fresh before every round (resets to Random after each round starts).
+let nextSignal = 'RANDOM';
+// True once the organizer has typed into the settings form. While true, incoming server
+// updates (players joining/leaving etc.) must NOT overwrite what they're typing.
+let settingsDirty = false;
 
 let roomCode = localStorage.getItem('dpi_roomCode');
 let organizerToken = localStorage.getItem('dpi_organizerToken');
@@ -38,9 +48,6 @@ function settingsFields() {
     dangerColor: document.getElementById('s_dangerColor')
   };
 }
-
-// Fields locked once the game has started — timing/structure only changes before round 1.
-const TIMING_FIELD_KEYS = ['rounds', 'minWait', 'maxWait', 'window', 'dontPress'];
 
 function fillSettings(settings) {
   const f = settingsFields();
@@ -126,9 +133,31 @@ if (roomCode && organizerToken) {
 
 socket.on('state', render);
 
+function updatePicker(disabled) {
+  signalPicker.querySelectorAll('.pick').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.signal === nextSignal);
+    btn.disabled = disabled;
+  });
+  pickHint.textContent = nextSignal === 'RANDOM'
+    ? 'Random: uses the "Don\'t-press odds" from the settings.'
+    : `You chose: ${nextSignal === 'PRESS_NOW' ? 'PRESS' : "DON'T PRESS"} for the next round. (Hide this panel if players can see your screen!)`;
+}
+
+signalPicker.querySelectorAll('.pick').forEach(btn => {
+  btn.addEventListener('click', () => {
+    nextSignal = btn.dataset.signal;
+    updatePicker(false);
+  });
+});
+
+settingsPanel.addEventListener('input', () => { settingsDirty = true; });
+
 startBtn.addEventListener('click', () => {
-  socket.emit('organizer:startRound', { roomCode }, res => {
-    if (!res.ok) stageMeta.textContent = res.error || '';
+  // Send the current form values along with the pick, so edits are applied even if Save wasn't clicked.
+  socket.emit('organizer:startRound', { roomCode, settings: readSettings(), nextSignal }, res => {
+    if (!res.ok) { stageMeta.textContent = res.error || ''; return; }
+    settingsDirty = false;
+    nextSignal = 'RANDOM'; // decide again before every round
   });
 });
 
@@ -140,7 +169,8 @@ resetBtn.addEventListener('click', () => {
 saveSettingsBtn.addEventListener('click', () => {
   settingsError.textContent = '';
   socket.emit('organizer:updateSettings', { roomCode, settings: readSettings() }, res => {
-    if (!res.ok) settingsError.textContent = res.error || 'Could not save settings.';
+    if (!res.ok) { settingsError.textContent = res.error || 'Could not save settings.'; return; }
+    settingsDirty = false;
   });
 });
 
@@ -183,19 +213,16 @@ function render(state) {
   document.documentElement.style.setProperty('--go', state.settings.goColor);
   document.documentElement.style.setProperty('--danger', state.settings.dangerColor);
 
-  // Points + colors can be edited in lobby or between rounds ('result').
-  // Timing/structure fields lock as soon as the game is underway.
+  // Everything (rounds, timing, odds, points, colors) can be edited in the lobby and between
+  // rounds. Only locked while a round is actually running.
   const canEditAny = state.phase === 'lobby' || state.phase === 'result';
   const f = settingsFields();
-  const timingFieldsLocked = state.phase !== 'lobby';
-  TIMING_FIELD_KEYS.forEach(key => { f[key].disabled = timingFieldsLocked; });
-  f.p1.disabled = f.p2.disabled = f.p3.disabled = !canEditAny;
-  f.goColor.disabled = f.dangerColor.disabled = !canEditAny;
+  Object.values(f).forEach(el => { el.disabled = !canEditAny; });
   saveSettingsBtn.disabled = !canEditAny;
-  settingsHint.textContent = state.phase === 'lobby'
-    ? ''
-    : (canEditAny ? "Points and colors can change between rounds — timing is locked in." : 'Settings lock while a round is in progress.');
-  if (canEditAny) fillSettings(state.settings);
+  settingsHint.textContent = canEditAny ? '' : 'Settings lock while a round is in progress.';
+  // Refresh the form from the server, but never clobber edits the organizer is in the middle of.
+  if (canEditAny && !settingsDirty) fillSettings(state.settings);
+  updatePicker(!canEditAny);
 
   renderPlayers(state.players);
 
@@ -243,6 +270,12 @@ function render(state) {
       signalText.textContent = '🔴 DON\'T PRESS!';
       stageMeta.textContent = 'Anyone who presses is eliminated.';
     }
+    startBtn.disabled = true;
+  } else if (state.phase === 'collecting') {
+    roundTag.textContent = `Round ${state.roundIndex} / ${state.totalRounds}`;
+    signalText.className = 'signal wait';
+    signalText.textContent = 'TIME\'S UP';
+    stageMeta.textContent = 'Collecting last presses...';
     startBtn.disabled = true;
   } else if (state.phase === 'result') {
     roundTag.textContent = `Round ${state.roundIndex} / ${state.totalRounds}`;
