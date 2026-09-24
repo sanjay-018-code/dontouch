@@ -62,6 +62,9 @@ function showGame() {
 let currentPhase = null;
 let pressedThisRound = false;
 let lastCountdownValue = null;
+// performance.now() at the moment the signal was actually painted on THIS phone. Reaction time is
+// measured from here, so it doesn't depend on how fast the network delivered the signal or the tap.
+let signalShownAt = null;
 
 // --- simple beep via Web Audio API, no audio files needed ---
 let audioCtx = null;
@@ -114,9 +117,16 @@ function render(state) {
     roundBadge.style.display = 'none';
   }
 
+  // Only the moment we ENTER 'live' starts the clock; later re-renders (someone joining, etc.) must not.
+  const enteredLive = state.phase === 'live' && currentPhase !== 'live';
   if (state.phase !== currentPhase) {
     pressedThisRound = false;
     currentPhase = state.phase;
+    if (state.phase !== 'live') signalShownAt = null;
+  }
+  if (enteredLive) {
+    signalShownAt = null; // not armed until the browser has drawn the signal
+    requestAnimationFrame(() => { signalShownAt = performance.now(); });
   }
 
   gameScreen.className = 'player-screen';
@@ -154,6 +164,11 @@ function render(state) {
       pressBtn.textContent = 'DON\'T!';
     }
     pressBtn.disabled = eliminated || pressedThisRound;
+  } else if (state.phase === 'collecting') {
+    statusText.className = 'status-text wait';
+    statusText.textContent = "Time's up — counting...";
+    pressBtn.disabled = true;
+    pressBtn.textContent = 'TIME';
   } else if (state.phase === 'result') {
     statusText.className = 'status-text wait';
     statusText.textContent = 'Round over.';
@@ -168,13 +183,20 @@ function render(state) {
   }
 }
 
-pressBtn.addEventListener('click', () => {
-  if (pressBtn.disabled) return;
+function doPress() {
+  if (pressBtn.disabled || signalShownAt === null) return;
+  // Measured locally on the phone -> unaffected by network lag. The server just ranks these numbers.
+  const reactionMs = Math.round(performance.now() - signalShownAt);
   pressedThisRound = true;
   pressBtn.disabled = true;
   if (navigator.vibrate) navigator.vibrate(30);
-  socket.emit('player:press', { roomCode });
-});
+  socket.emit('player:press', { roomCode, reactionMs });
+}
+
+// pointerdown fires the instant a finger lands (click waits for the finger to lift = extra delay).
+pressBtn.addEventListener('pointerdown', e => { e.preventDefault(); doPress(); });
+// Keyboard fallback (Enter/Space produce a click with detail === 0).
+pressBtn.addEventListener('click', e => { if (e.detail === 0) doPress(); });
 
 socket.on('kicked', () => {
   localStorage.removeItem('dpi_p_roomCode');
