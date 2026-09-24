@@ -232,6 +232,24 @@ input:focus { outline: 2px solid var(--wait); outline-offset: 1px; }
 .stage .signal.danger { color: var(--danger); }
 .stage .signal.wait { color: var(--wait); }
 
+.countdown-num {
+  font-size: 96px;
+  line-height: 1;
+  color: var(--wait);
+  font-family: 'Space Grotesk', sans-serif;
+  font-weight: 700;
+}
+
+input[type="color"] {
+  width: 100%;
+  height: 42px;
+  padding: 4px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  cursor: pointer;
+}
+
 .stage .meta { color: var(--text-dim); font-size: 14px; }
 
 .panel {

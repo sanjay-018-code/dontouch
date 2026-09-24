@@ -18,6 +18,7 @@ const resultList = document.getElementById('resultList');
 const playerCount = document.getElementById('playerCount');
 const playerList = document.getElementById('playerList');
 const settingsError = document.getElementById('settingsError');
+const settingsHint = document.getElementById('settingsHint');
 const saveSettingsBtn = document.getElementById('saveSettingsBtn');
 
 let roomCode = localStorage.getItem('dpi_roomCode');
@@ -32,9 +33,14 @@ function settingsFields() {
     dontPress: document.getElementById('s_dontPress'),
     p1: document.getElementById('s_p1'),
     p2: document.getElementById('s_p2'),
-    p3: document.getElementById('s_p3')
+    p3: document.getElementById('s_p3'),
+    goColor: document.getElementById('s_goColor'),
+    dangerColor: document.getElementById('s_dangerColor')
   };
 }
+
+// Fields locked once the game has started — timing/structure only changes before round 1.
+const TIMING_FIELD_KEYS = ['rounds', 'minWait', 'maxWait', 'window', 'dontPress'];
 
 function fillSettings(settings) {
   const f = settingsFields();
@@ -46,6 +52,8 @@ function fillSettings(settings) {
   f.p1.value = settings.pointsFirst;
   f.p2.value = settings.pointsSecond;
   f.p3.value = settings.pointsThird;
+  f.goColor.value = settings.goColor;
+  f.dangerColor.value = settings.dangerColor;
 }
 
 function readSettings() {
@@ -58,9 +66,30 @@ function readSettings() {
     dontPressChance: Number(f.dontPress.value) / 100,
     pointsFirst: f.p1.value,
     pointsSecond: f.p2.value,
-    pointsThird: f.p3.value
+    pointsThird: f.p3.value,
+    goColor: f.goColor.value,
+    dangerColor: f.dangerColor.value
   };
 }
+
+// --- simple beep via Web Audio API, no audio files needed ---
+let audioCtx = null;
+function beep(freq = 880, durationMs = 140) {
+  try {
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'square';
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + durationMs / 1000);
+    osc.connect(gain).connect(audioCtx.destination);
+    osc.start();
+    osc.stop(audioCtx.currentTime + durationMs / 1000);
+  } catch (e) { /* audio not available — ignore */ }
+}
+
+let lastCountdownValue = null;
 
 function showConsole() {
   loginScreen.style.display = 'none';
@@ -150,15 +179,37 @@ function escapeHtml(s) {
 function render(state) {
   roomCodeText.textContent = state.code;
 
-  const settingsLocked = state.phase !== 'lobby';
-  document.querySelectorAll('#settingsPanel input').forEach(el => el.disabled = settingsLocked);
-  saveSettingsBtn.disabled = settingsLocked;
-  if (!settingsLocked) fillSettings(state.settings);
+  // Apply this round's colors live, everywhere they're used.
+  document.documentElement.style.setProperty('--go', state.settings.goColor);
+  document.documentElement.style.setProperty('--danger', state.settings.dangerColor);
+
+  // Points + colors can be edited in lobby or between rounds ('result').
+  // Timing/structure fields lock as soon as the game is underway.
+  const canEditAny = state.phase === 'lobby' || state.phase === 'result';
+  const f = settingsFields();
+  const timingFieldsLocked = state.phase !== 'lobby';
+  TIMING_FIELD_KEYS.forEach(key => { f[key].disabled = timingFieldsLocked; });
+  f.p1.disabled = f.p2.disabled = f.p3.disabled = !canEditAny;
+  f.goColor.disabled = f.dangerColor.disabled = !canEditAny;
+  saveSettingsBtn.disabled = !canEditAny;
+  settingsHint.textContent = state.phase === 'lobby'
+    ? ''
+    : (canEditAny ? "Points and colors can change between rounds — timing is locked in." : 'Settings lock while a round is in progress.');
+  if (canEditAny) fillSettings(state.settings);
 
   renderPlayers(state.players);
 
   stage.className = 'stage';
   resultPanel.style.display = 'none';
+
+  if (state.phase === 'countdown') {
+    if (state.countdownValue !== lastCountdownValue) {
+      lastCountdownValue = state.countdownValue;
+      beep(state.countdownValue === 1 ? 1100 : 700, 150);
+    }
+  } else {
+    lastCountdownValue = null;
+  }
 
   if (state.phase === 'lobby') {
     roundTag.textContent = 'Lobby';
@@ -167,6 +218,12 @@ function render(state) {
     stageMeta.textContent = `${state.totalRounds} rounds configured — press Start when ready.`;
     startBtn.disabled = state.players.length === 0;
     startBtn.textContent = 'Start round';
+  } else if (state.phase === 'countdown') {
+    roundTag.textContent = `Round ${state.roundIndex} / ${state.totalRounds}`;
+    signalText.className = 'countdown-num';
+    signalText.textContent = String(state.countdownValue);
+    stageMeta.textContent = 'Get ready...';
+    startBtn.disabled = true;
   } else if (state.phase === 'waiting') {
     roundTag.textContent = `Round ${state.roundIndex} / ${state.totalRounds}`;
     signalText.className = 'signal wait';

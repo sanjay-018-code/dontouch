@@ -35,8 +35,13 @@ const DEFAULT_SETTINGS = {
   dontPressChance: 0.35, // probability a round is "DON'T PRESS"
   pointsFirst: 5,
   pointsSecond: 3,
-  pointsThird: 1
+  pointsThird: 1,
+  goColor: '#2fe07a',     // "PRESS NOW" signal color, editable per round
+  dangerColor: '#ff3b3b'  // "DON'T PRESS" signal color, editable per round
 };
+
+const HEX_COLOR_RE = /^#[0-9A-Fa-f]{6}$/;
+const COUNTDOWN_START = 3; // seconds counted down before each round
 
 // rooms: Map<roomCode, RoomState>
 const rooms = new Map();
@@ -50,8 +55,9 @@ function newRoom(organizerName) {
     organizerName: organizerName || 'Organizer',
     settings: { ...DEFAULT_SETTINGS },
     players: new Map(), // playerToken -> { id, name, score, eliminated, connected, socketId }
-    phase: 'lobby',     // lobby | waiting | live | result | ended
+    phase: 'lobby',     // lobby | countdown | waiting | live | result | ended
     roundIndex: 0,
+    countdownValue: null,
     currentSignal: null, // 'PRESS_NOW' | 'DONT_PRESS'
     signalStartedAt: null,
     presses: [],          // [{ playerToken, name, atMs }] for the current live round
@@ -81,6 +87,7 @@ function publicState(room) {
     phase: room.phase,
     roundIndex: room.roundIndex,
     totalRounds: room.settings.rounds,
+    countdownValue: room.phase === 'countdown' ? room.countdownValue : null,
     currentSignal: room.phase === 'live' ? room.currentSignal : null,
     players: publicPlayers(room),
     lastResult: room.lastResult
@@ -103,10 +110,28 @@ function startRound(room) {
   }
   clearTimers(room);
   room.roundIndex += 1;
-  room.phase = 'waiting';
   room.currentSignal = null;
   room.presses = [];
   room.lastResult = null;
+  runCountdown(room, COUNTDOWN_START);
+}
+
+function runCountdown(room, value) {
+  room.phase = 'countdown';
+  room.countdownValue = value;
+  broadcast(room);
+
+  if (value <= 1) {
+    room.timers.toWait = setTimeout(() => beginWait(room), 1000);
+    return;
+  }
+  room.timers.tick = setTimeout(() => runCountdown(room, value - 1), 1000);
+}
+
+function beginWait(room) {
+  if (room.phase !== 'countdown') return;
+  room.phase = 'waiting';
+  room.countdownValue = null;
   broadcast(room);
 
   const { minWaitMs, maxWaitMs } = room.settings;
@@ -166,6 +191,7 @@ function endGame(room) {
   clearTimers(room);
   room.phase = 'ended';
   room.currentSignal = null;
+  room.countdownValue = null;
   broadcast(room);
 }
 
@@ -174,6 +200,7 @@ function resetGame(room) {
   room.phase = 'lobby';
   room.roundIndex = 0;
   room.currentSignal = null;
+  room.countdownValue = null;
   room.presses = [];
   room.lastResult = null;
   room.players.forEach(p => {
@@ -214,7 +241,11 @@ io.on('connection', socket => {
   socket.on('organizer:updateSettings', ({ roomCode, settings }, cb) => {
     const room = rooms.get(roomCode);
     if (!requireOrganizer(socket, room)) return cb && cb({ ok: false, error: 'Not authorized.' });
-    if (room.phase !== 'lobby') return cb && cb({ ok: false, error: 'Settings can only change before the game starts. Reset to edit.' });
+    // Points and colors can change between rounds (lobby or right after a round resolves).
+    // Timing settings (rounds/wait/window/odds) are locked once the game is underway to keep rounds fair.
+    if (room.phase !== 'lobby' && room.phase !== 'result') {
+      return cb && cb({ ok: false, error: 'Wait for the round to finish before changing settings.' });
+    }
 
     const s = room.settings;
     const clamp = (v, lo, hi, fallback) => {
@@ -222,14 +253,24 @@ io.on('connection', socket => {
       if (!Number.isFinite(n)) return fallback;
       return Math.min(hi, Math.max(lo, n));
     };
-    s.rounds = clamp(settings.rounds, 1, 50, s.rounds);
-    s.minWaitMs = clamp(settings.minWaitMs, 500, 20000, s.minWaitMs);
-    s.maxWaitMs = clamp(settings.maxWaitMs, s.minWaitMs, 30000, s.maxWaitMs);
-    s.pressWindowMs = clamp(settings.pressWindowMs, 500, 10000, s.pressWindowMs);
-    s.dontPressChance = clamp(settings.dontPressChance, 0, 0.9, s.dontPressChance);
+    const color = (v, fallback) => (typeof v === 'string' && HEX_COLOR_RE.test(v)) ? v : fallback;
+
+    if (room.phase === 'lobby') {
+      // Timing/structure settings only editable before the game starts at all.
+      s.rounds = clamp(settings.rounds, 1, 50, s.rounds);
+      s.minWaitMs = clamp(settings.minWaitMs, 500, 20000, s.minWaitMs);
+      s.maxWaitMs = clamp(settings.maxWaitMs, s.minWaitMs, 30000, s.maxWaitMs);
+      s.pressWindowMs = clamp(settings.pressWindowMs, 500, 10000, s.pressWindowMs);
+      s.dontPressChance = clamp(settings.dontPressChance, 0, 0.9, s.dontPressChance);
+    }
+
+    // Points and colors: editable in lobby AND between rounds, so the organizer
+    // can change the stakes/look round to round.
     s.pointsFirst = clamp(settings.pointsFirst, 0, 100, s.pointsFirst);
     s.pointsSecond = clamp(settings.pointsSecond, 0, 100, s.pointsSecond);
     s.pointsThird = clamp(settings.pointsThird, 0, 100, s.pointsThird);
+    s.goColor = color(settings.goColor, s.goColor);
+    s.dangerColor = color(settings.dangerColor, s.dangerColor);
 
     broadcast(room);
     cb && cb({ ok: true });

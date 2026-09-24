@@ -40,6 +40,8 @@ function doJoin(code, name) {
 }
 
 joinBtn.addEventListener('click', () => {
+  // Unlock audio on this user gesture so later beeps (triggered by server events) aren't blocked.
+  try { audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {}
   const code = roomCodeInput.value.trim().toUpperCase();
   const name = nameInput.value.trim() || 'Player';
   if (code.length !== 4) { joinError.textContent = 'Enter the 4-letter room code.'; return; }
@@ -59,6 +61,24 @@ function showGame() {
 
 let currentPhase = null;
 let pressedThisRound = false;
+let lastCountdownValue = null;
+
+// --- simple beep via Web Audio API, no audio files needed ---
+let audioCtx = null;
+function beep(freq = 880, durationMs = 140) {
+  try {
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'square';
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + durationMs / 1000);
+    osc.connect(gain).connect(audioCtx.destination);
+    osc.start();
+    osc.stop(audioCtx.currentTime + durationMs / 1000);
+  } catch (e) { /* audio not available — ignore */ }
+}
 
 socket.on('state', state => {
   if (state.code !== roomCode) return;
@@ -66,8 +86,20 @@ socket.on('state', state => {
 });
 
 function render(state) {
+  document.documentElement.style.setProperty('--go', state.settings.goColor);
+  document.documentElement.style.setProperty('--danger', state.settings.dangerColor);
+
   const me = state.players.find(p => p.id === myId);
   scoreText.textContent = `${me ? me.score : 0} pts`;
+
+  if (state.phase === 'countdown') {
+    if (state.countdownValue !== lastCountdownValue) {
+      lastCountdownValue = state.countdownValue;
+      beep(state.countdownValue === 1 ? 1100 : 700, 150);
+    }
+  } else {
+    lastCountdownValue = null;
+  }
 
   if (me && me.eliminated) {
     eliminatedBanner.style.display = 'block';
@@ -102,6 +134,11 @@ function render(state) {
     statusText.textContent = eliminated ? "You're out — watching this one." : 'Get ready...';
     pressBtn.disabled = true;
     pressBtn.textContent = 'WAIT';
+  } else if (state.phase === 'countdown') {
+    statusText.className = 'status-text wait';
+    statusText.textContent = 'Round starting in...';
+    pressBtn.disabled = true;
+    pressBtn.textContent = String(state.countdownValue);
   } else if (state.phase === 'live') {
     if (state.currentSignal === 'PRESS_NOW') {
       gameScreen.classList.add('live-go');
