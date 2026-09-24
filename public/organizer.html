@@ -40,6 +40,13 @@
         </div>
 
         <div class="panel">
+          <h3>Next round's signal</h3>
+          <div class="signal-picker" id="signalPicker">
+            <button type="button" class="pick pick-go" data-signal="PRESS_NOW">🟢 Press</button>
+            <button type="button" class="pick pick-danger" data-signal="DONT_PRESS">🔴 Don't press</button>
+            <button type="button" class="pick pick-random active" data-signal="RANDOM">🎲 Random</button>
+          </div>
+          <div class="meta" id="pickHint" style="color:var(--text-dim); font-size:12px; margin:8px 0 14px;"></div>
           <div class="controls-row">
             <button class="btn btn-primary" id="startBtn">Start round</button>
             <button class="btn btn-ghost" id="resetBtn">Reset game</button>
